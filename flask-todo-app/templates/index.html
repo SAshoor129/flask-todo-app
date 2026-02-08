@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TaskFlow SaaS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
+<style>
+body {
+    background: #f4f7fb;
+}
+.sidebar {
+    width: 230px;
+    background: #0d6efd;
+    min-height: 100vh;
+    color: white;
+    position: fixed;
+}
+.main {
+    margin-left: 230px;
+    padding: 30px;
+}
+.task-done {
+    text-decoration: line-through;
+    color: gray;
+}
+.card {
+    border-radius: 14px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar p-4">
+    <h4 class="fw-bold mb-4">
+        <i class="bi bi-check2-square"></i> TaskFlow
+    </h4>
+    <p class="opacity-75">SaaS Dashboard</p>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+<h3 class="fw-bold mb-4">Dashboard</h3>
+
+<!-- Stats -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6>Total Tasks</h6>
+                <h3>{{ tasks|length }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6>Completed</h6>
+                <h3 class="text-success">
+                    {{ tasks | selectattr("completed") | list | length }}
+                </h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6>Pending</h6>
+                <h3 class="text-warning">
+                    {{ tasks | rejectattr("completed") | list | length }}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add task -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form action="/add" method="POST" class="input-group">
+            <input name="task" class="form-control form-control-lg" placeholder="Add new task..." required>
+            <button class="btn btn-primary btn-lg">
+                <i class="bi bi-plus-lg"></i>
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Tasks -->
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h5 class="mb-3">Your Tasks</h5>
+
+        {% for task in tasks %}
+        <div class="d-flex justify-content-between align-items-center border rounded p-3 mb-2">
+
+            <span class="{% if task.completed %}task-done{% endif %}">
+                {{ task.name }}
+            </span>
+
+            <div>
+                <a href="/complete/{{ task.id }}" class="btn btn-sm btn-outline-success me-2">
+                    <i class="bi bi-check-lg"></i>
+                </a>
+                <a href="/delete/{{ task.id }}" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-trash"></i>
+                </a>
+            </div>
+
+        </div>
+        {% else %}
+        <p class="text-muted text-center">No tasks yet 🎉</p>
+        {% endfor %}
+    </div>
+</div>
+
+</div>
+
+</body>
+</html>
