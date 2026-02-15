@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ task.name }} - Elite Task Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f1117, #1a1d26);
+            min-height: 100vh;
+            padding: 30px 0;
+        }
+        .card {
+            background: #1a1d26;
+            border: 1px solid #2a2f3a;
+            border-radius: 16px;
+        }
+        .badge-priority {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+        .badge-high {
+            background: #dc3545;
+        }
+        .badge-medium {
+            background: #ffc107;
+            color: #000;
+        }
+        .badge-low {
+            background: #28a745;
+        }
+        .status-badge {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            margin-left: 10px;
+        }
+        .form-control, .form-select {
+            background: #0f1117;
+            border: 1px solid #2a2f3a;
+            color: white;
+        }
+        .form-control:focus, .form-select:focus {
+            background: #0f1117;
+            color: white;
+            border-color: #6f42c1;
+            box-shadow: 0 0 10px rgba(111,66,193,0.4);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6f42c1, #6610f2);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a32a3, #520dc2);
+        }
+        .text-muted {
+            color: #9ca3af !important;
+        }
+        .overdue {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .meta-section {
+            background: #0f1117;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <a href="/" class="btn btn-outline-light mb-4"><i class="bi bi-arrow-left"></i> Back to Tasks</a>
+                
+                <div class="card shadow-lg">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-4">
+                            <div>
+                                <h2 class="text-white">{{ task.name }}</h2>
+                                <small class="text-muted">Created: {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </div>
+                            <div>
+                                <span class="badge badge-priority badge-{{ task.priority.lower() }}">
+                                    {{ task.priority }}
+                                </span>
+                                <span class="status-badge bg-info">{{ task.status.upper() }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Task Metadata Section -->
+                        <div class="meta-section">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong class="text-white">Status:</strong>
+                                    <p class="text-muted">{{ task.status.upper() }}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong class="text-white">Priority:</strong>
+                                    <p class="text-muted">{{ task.priority }}</p>
+                                </div>
+                            </div>
+                            {% if task.due_date %}
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <strong class="text-white">Due Date:</strong>
+                                    <p class="text-muted {% if task.is_overdue() %}overdue{% endif %}">
+                                        {{ task.due_date.strftime('%Y-%m-%d %H:%M') }}
+                                        {% if task.is_overdue() %}
+                                            <i class="bi bi-exclamation-triangle-fill"></i> OVERDUE
+                                        {% elif task.days_until_due() is not none and task.days_until_due() <= 3 %}
+                                            <i class="bi bi-clock-fill"></i> Due in {{ task.days_until_due() }} days
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Description Section -->
+                        {% if task.description %}
+                        <div class="mb-4">
+                            <h5 class="text-white mb-3">Description</h5>
+                            <div class="meta-section">
+                                <p class="text-muted">{{ task.description }}</p>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex gap-2">
+                            <a href="/edit/{{ task.id }}" class="btn btn-primary">
+                                <i class="bi bi-pencil-square"></i> Edit
+                            </a>
+                            <a href="/delete/{{ task.id }}" class="btn btn-danger" onclick="return confirm('Delete this task?')">
+                                <i class="bi bi-trash-fill"></i> Delete
+                            </a>
+                            <a href="/complete/{{ task.id }}" class="btn btn-success">
+                                <i class="bi bi-check-circle"></i> 
+                                {% if task.completed %}Mark Incomplete{% else %}Mark Complete{% endif %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
