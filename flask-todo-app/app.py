@@ -46,6 +46,21 @@ def delete(id):
     db.session.commit()
     return redirect("/")
 
+# Edit task page
+@app.route("/edit/<int:id>")
+def edit(id):
+    task = Task.query.get_or_404(id)
+    tasks = Task.query.order_by(Task.id.desc()).all()
+    return render_template("index.html", tasks=tasks, editing_task=task)
+
+# Update task
+@app.route("/update/<int:id>", methods=["POST"])
+def update(id):
+    task = Task.query.get_or_404(id)
+    task.name = request.form["task_name"]
+    db.session.commit()
+    return redirect("/")
+
 # Run app
 if __name__ == "__main__":
     with app.app_context():
