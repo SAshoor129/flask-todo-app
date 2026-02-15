@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 app = Flask(__name__)
@@ -51,6 +51,7 @@ def index():
     search = request.args.get('q', '').strip()
     priority_filter = request.args.get('priority', '').strip()
     status_filter = request.args.get('status', '').strip()
+    date_filter = request.args.get('date_filter', '').strip()
     sort_by = request.args.get('sort', 'created_at_desc').strip()
     page = request.args.get('page', 1, type=int)
     per_page = 10
@@ -75,17 +76,44 @@ def index():
     if status_filter:
         query = query.filter(Task.status == status_filter)
     
+    # Apply date range filter
+    today = datetime.utcnow().date()
+    if date_filter == 'overdue':
+        query = query.filter(
+            Task.due_date < datetime.utcnow(),
+            Task.completed == False
+        )
+    elif date_filter == 'today':
+        start = datetime.combine(today, datetime.min.time())
+        end = datetime.combine(today, datetime.max.time())
+        query = query.filter(Task.due_date.between(start, end))
+    elif date_filter == 'this_week':
+        start = today
+        end = today + timedelta(days=7)
+        start_dt = datetime.combine(start, datetime.min.time())
+        end_dt = datetime.combine(end, datetime.max.time())
+        query = query.filter(Task.due_date.between(start_dt, end_dt))
+    elif date_filter == 'no_due_date':
+        query = query.filter(Task.due_date == None)
+    
     # Apply sorting
     if sort_by == 'due_date_asc':
-        query = query.order_by(Task.due_date.asc())
+        query = query.order_by(Task.due_date.asc().nullslast())
     elif sort_by == 'due_date_desc':
-        query = query.order_by(Task.due_date.desc())
+        query = query.order_by(Task.due_date.desc().nullslast())
     elif sort_by == 'priority_high':
         priority_order = {'High': 1, 'Medium': 2, 'Low': 3}
         query = query.order_by(db.case({p: i for i, p in priority_order.items()}, value=Task.priority))
+    elif sort_by == 'priority_low':
+        priority_order = {'Low': 1, 'Medium': 2, 'High': 3}
+        query = query.order_by(db.case({p: i for i, p in priority_order.items()}, value=Task.priority))
+    elif sort_by == 'name_asc':
+        query = query.order_by(Task.name.asc())
+    elif sort_by == 'name_desc':
+        query = query.order_by(Task.name.desc())
     elif sort_by == 'created_at_asc':
         query = query.order_by(Task.created_at.asc())
-    else:  # created_at_desc
+    else:  # created_at_desc (default)
         query = query.order_by(Task.created_at.desc())
     
     # Pagination
@@ -94,15 +122,21 @@ def index():
     total_pages = paginated.pages
     total_count = paginated.total
     
+    # Get stats for dashboard
+    all_tasks = Task.query.all()
+    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    
     return render_template("index.html", 
                           tasks=tasks, 
                           search=search,
                           priority_filter=priority_filter,
                           status_filter=status_filter,
+                          date_filter=date_filter,
                           sort_by=sort_by,
                           page=page,
                           total_pages=total_pages,
-                          total_count=total_count)
+                          total_count=total_count,
+                          overdue_count=overdue_count)
 
 # View task details
 @app.route("/task/<int:id>")

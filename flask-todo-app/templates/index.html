@@ -221,7 +221,7 @@ body {
 <div class="dashboard">
 <div class="stat-card">
 <div class="stat-number">{{ tasks|length }}</div>
-<div class="stat-label">Total Tasks</div>
+<div class="stat-label">Showing</div>
 </div>
 <div class="stat-card">
 <div class="stat-number">{{ tasks|selectattr('completed', 'equalto', True)|list|length }}</div>
@@ -232,8 +232,8 @@ body {
 <div class="stat-label">Pending</div>
 </div>
 <div class="stat-card">
-<div class="stat-number">{{ tasks|selectattr('priority', 'equalto', 'High')|list|length }}</div>
-<div class="stat-label">High Priority</div>
+<div class="stat-number">{{ overdue_count }}</div>
+<div class="stat-label">Overdue</div>
 </div>
 </div>
 
@@ -264,7 +264,7 @@ body {
 <!-- Search & Filter Section -->
 <div class="filters-section">
 <div class="row g-2">
-<div class="col-md-4">
+<div class="col-md-3">
 <form method="GET" class="d-flex gap-2">
 <input type="text" name="q" class="form-control form-control-sm" placeholder="Search tasks..." value="{{ search }}">
 <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
@@ -274,38 +274,57 @@ body {
 </form>
 </div>
 <div class="col-md-2">
-<form method="GET" class="d-inline">
+<form method="GET" class="d-inline w-100">
 <input type="hidden" name="q" value="{{ search }}">
 <select name="priority" class="form-select form-select-sm" onchange="this.form.submit()">
 <option value="">All Priorities</option>
-<option value="High" {% if priority_filter == 'High' %}selected{% endif %}>High</option>
-<option value="Medium" {% if priority_filter == 'Medium' %}selected{% endif %}>Medium</option>
-<option value="Low" {% if priority_filter == 'Low' %}selected{% endif %}>Low</option>
+<option value="High" {% if priority_filter == 'High' %}selected{% endif %}>🔴 High</option>
+<option value="Medium" {% if priority_filter == 'Medium' %}selected{% endif %}>🟡 Medium</option>
+<option value="Low" {% if priority_filter == 'Low' %}selected{% endif %}>🟢 Low</option>
 </select>
 </form>
 </div>
 <div class="col-md-2">
-<form method="GET" class="d-inline">
+<form method="GET" class="d-inline w-100">
 <input type="hidden" name="q" value="{{ search }}">
 <input type="hidden" name="priority" value="{{ priority_filter }}">
 <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
 <option value="">All Status</option>
-<option value="todo" {% if status_filter == 'todo' %}selected{% endif %}>To Do</option>
-<option value="doing" {% if status_filter == 'doing' %}selected{% endif %}>Doing</option>
-<option value="done" {% if status_filter == 'done' %}selected{% endif %}>Done</option>
+<option value="todo" {% if status_filter == 'todo' %}selected{% endif %}>📝 To Do</option>
+<option value="doing" {% if status_filter == 'doing' %}selected{% endif %}>⚙️ Doing</option>
+<option value="done" {% if status_filter == 'done' %}selected{% endif %}>✅ Done</option>
 </select>
 </form>
 </div>
 <div class="col-md-2">
-<form method="GET" class="d-inline">
+<form method="GET" class="d-inline w-100">
 <input type="hidden" name="q" value="{{ search }}">
 <input type="hidden" name="priority" value="{{ priority_filter }}">
 <input type="hidden" name="status" value="{{ status_filter }}">
+<select name="date_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+<option value="">All Dates</option>
+<option value="overdue" {% if date_filter == 'overdue' %}selected{% endif %}>⏰ Overdue</option>
+<option value="today" {% if date_filter == 'today' %}selected{% endif %}>📅 Today</option>
+<option value="this_week" {% if date_filter == 'this_week' %}selected{% endif %}>📆 This Week</option>
+<option value="no_due_date" {% if date_filter == 'no_due_date' %}selected{% endif %}>📌 No Due Date</option>
+</select>
+</form>
+</div>
+<div class="col-md-3">
+<form method="GET" class="d-inline w-100">
+<input type="hidden" name="q" value="{{ search }}">
+<input type="hidden" name="priority" value="{{ priority_filter }}">
+<input type="hidden" name="status" value="{{ status_filter }}">
+<input type="hidden" name="date_filter" value="{{ date_filter }}">
 <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
 <option value="created_at_desc" {% if sort_by == 'created_at_desc' %}selected{% endif %}>Newest First</option>
 <option value="created_at_asc" {% if sort_by == 'created_at_asc' %}selected{% endif %}>Oldest First</option>
-<option value="due_date_asc" {% if sort_by == 'due_date_asc' %}selected{% endif %}>Due Date ↑</option>
-<option value="priority_high" {% if sort_by == 'priority_high' %}selected{% endif %}>Priority High</option>
+<option value="due_date_asc" {% if sort_by == 'due_date_asc' %}selected{% endif %}>Due Date (Soon)</option>
+<option value="due_date_desc" {% if sort_by == 'due_date_desc' %}selected{% endif %}>Due Date (Later)</option>
+<option value="priority_high" {% if sort_by == 'priority_high' %}selected{% endif %}>Priority (High→Low)</option>
+<option value="priority_low" {% if sort_by == 'priority_low' %}selected{% endif %}>Priority (Low→High)</option>
+<option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name (A→Z)</option>
+<option value="name_desc" {% if sort_by == 'name_desc' %}selected{% endif %}>Name (Z→A)</option>
 </select>
 </form>
 </div>
