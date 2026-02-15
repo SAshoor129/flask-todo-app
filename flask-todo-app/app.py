@@ -52,6 +52,8 @@ def index():
     priority_filter = request.args.get('priority', '').strip()
     status_filter = request.args.get('status', '').strip()
     sort_by = request.args.get('sort', 'created_at_desc').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
     
     # Build query
     query = Task.query
@@ -86,14 +88,21 @@ def index():
     else:  # created_at_desc
         query = query.order_by(Task.created_at.desc())
     
-    tasks = query.all()
+    # Pagination
+    paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+    tasks = paginated.items
+    total_pages = paginated.pages
+    total_count = paginated.total
     
     return render_template("index.html", 
                           tasks=tasks, 
                           search=search,
                           priority_filter=priority_filter,
                           status_filter=status_filter,
-                          sort_by=sort_by)
+                          sort_by=sort_by,
+                          page=page,
+                          total_pages=total_pages,
+                          total_count=total_count)
 
 # View task details
 @app.route("/task/<int:id>")

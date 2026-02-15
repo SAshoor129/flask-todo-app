@@ -369,6 +369,34 @@ body {
 </div>
 {% endif %}
 
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+<ul class="pagination justify-content-center">
+<li class="page-item {% if page <= 1 %}disabled{% endif %}">
+<a class="page-link" href="/?page=1&q={{ search }}&priority={{ priority_filter }}&status={{ status_filter }}&sort={{ sort_by }}">First</a>
+</li>
+<li class="page-item {% if page <= 1 %}disabled{% endif %}">
+<a class="page-link" href="/?page={{ page-1 }}&q={{ search }}&priority={{ priority_filter }}&status={{ status_filter }}&sort={{ sort_by }}">Previous</a>
+</li>
+
+{% for p in range(max(1, page-2), min(total_pages+1, page+3)) %}
+<li class="page-item {% if p == page %}active{% endif %}">
+<a class="page-link" href="/?page={{ p }}&q={{ search }}&priority={{ priority_filter }}&status={{ status_filter }}&sort={{ sort_by }}">{{ p }}</a>
+</li>
+{% endfor %}
+
+<li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+<a class="page-link" href="/?page={{ page+1 }}&q={{ search }}&priority={{ priority_filter }}&status={{ status_filter }}&sort={{ sort_by }}">Next</a>
+</li>
+<li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+<a class="page-link" href="/?page={{ total_pages }}&q={{ search }}&priority={{ priority_filter }}&status={{ status_filter }}&sort={{ sort_by }}">Last</a>
+</li>
+</ul>
+</nav>
+<p class="text-center text-muted mt-2">Page {{ page }} of {{ total_pages }} | Showing {{ tasks|length }} of {{ total_count }} tasks</p>
+{% endif %}
+
 </div>
 
 </div>
