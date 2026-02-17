@@ -47,6 +47,7 @@ class Comment(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     body = db.Column(db.Text, nullable=False)
     author = db.Column(db.String(100), default="Anonymous")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
@@ -101,6 +102,9 @@ class Task(db.Model):
     # Relationship to subtasks
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
                               order_by='Subtask.order')
+    
+    # Relationship to comments
+    comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     
     def is_overdue(self):
         if self.due_date and not self.completed:
@@ -295,6 +299,56 @@ def delete(id):
     db.session.delete(task)
     db.session.commit()
     return redirect("/")
+
+# Comment routes
+@app.route("/task/<int:task_id>/comment/add", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        body = data.get("body", "").strip()
+        author = data.get("author", "Anonymous").strip()
+    else:
+        body = request.form.get("body", "").strip()
+        author = request.form.get("author", "Anonymous").strip()
+    
+    if not body or len(body) > 1000:
+        return jsonify({"error": "Comment body required (max 1000 chars)"}), 400
+    
+    # Basic sanitization to prevent XSS
+    body = body.replace("<script>", "").replace("</script>", "")
+    
+    comment = Comment(task_id=task_id, body=body, author=author)
+    db.session.add(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(comment.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/comment/<int:comment_id>/delete", methods=["POST"])
+def delete_comment(comment_id):
+    """Delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    task_id = comment.task_id
+    
+    db.session.delete(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/comments", methods=["GET"])
+def get_task_comments(task_id):
+    """Get all comments for a task"""
+    task = Task.query.get_or_404(task_id)
+    comments = Comment.query.filter_by(task_id=task_id).order_by(Comment.created_at.desc()).all()
+    return jsonify([comment.to_dict() for comment in comments])
 
 # Edit task page
 @app.route("/edit/<int:id>")
