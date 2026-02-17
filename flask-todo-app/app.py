@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from enum import Enum
@@ -22,6 +22,25 @@ class StatusEnum(str, Enum):
     DOING = "doing"
     DONE = "done"
 
+# Subtask model
+class Subtask(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    is_done = db.Column(db.Boolean, default=False)
+    order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'title': self.title,
+            'is_done': self.is_done,
+            'order': self.order,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
 # Task model with metadata
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -34,6 +53,10 @@ class Task(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Relationship to subtasks
+    subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
+                              order_by='Subtask.order')
+    
     def is_overdue(self):
         if self.due_date and not self.completed:
             return self.due_date < datetime.utcnow()
@@ -44,6 +67,13 @@ class Task(db.Model):
             delta = self.due_date - datetime.utcnow()
             return delta.days
         return None
+    
+    def get_completion_percentage(self):
+        """Calculate task completion based on subtasks"""
+        if not self.subtasks:
+            return 100 if self.completed else 0
+        done_count = sum(1 for st in self.subtasks if st.is_done)
+        return int((done_count / len(self.subtasks)) * 100)
 
 # Home page
 @app.route("/")
@@ -232,6 +262,106 @@ def update(id):
     task.updated_at = datetime.utcnow()
     db.session.commit()
     return redirect("/")
+
+# Subtask routes
+@app.route("/task/<int:task_id>/subtask/add", methods=["POST"])
+def add_subtask(task_id):
+    """Add a subtask to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        title = data.get("title", "").strip()
+    else:
+        title = request.form.get("title", "").strip()
+    
+    if not title or len(title) > 200:
+        return jsonify({"error": "Subtask title required (max 200 chars)"}), 400
+    
+    # Get max order
+    max_order = db.session.query(db.func.max(Subtask.order)).filter_by(task_id=task_id).scalar() or 0
+    
+    subtask = Subtask(task_id=task_id, title=title, order=max_order + 1)
+    db.session.add(subtask)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/subtask/<int:subtask_id>/toggle", methods=["POST"])
+def toggle_subtask(subtask_id):
+    """Toggle subtask completion status"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    subtask.is_done = not subtask.is_done
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
+
+@app.route("/subtask/<int:subtask_id>/delete", methods=["POST"])
+def delete_subtask(subtask_id):
+    """Delete a subtask"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    task_id = subtask.task_id
+    
+    db.session.delete(subtask)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/subtasks", methods=["GET"])
+def get_subtasks(task_id):
+    """Get all subtasks for a task"""
+    task = Task.query.get_or_404(task_id)
+    subtasks = Subtask.query.filter_by(task_id=task_id).order_by(Subtask.order).all()
+    return jsonify({
+        'subtasks': [st.to_dict() for st in subtasks],
+        'completion_percentage': task.get_completion_percentage()
+    })
+
+@app.route("/subtask/<int:subtask_id>/update", methods=["POST"])
+def update_subtask(subtask_id):
+    """Update a subtask title"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        title = data.get("title", "").strip()
+    else:
+        title = request.form.get("title", "").strip()
+    
+    if title and len(title) <= 200:
+        subtask.title = title
+        db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
+
+@app.route("/subtask/<int:subtask_id>/reorder", methods=["POST"])
+def reorder_subtask(subtask_id):
+    """Reorder subtasks"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    
+    data = request.get_json() if request.is_json else request.form
+    new_order = data.get("order", type=int)
+    
+    if new_order is not None:
+        subtask.order = new_order
+        db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
 
 # Run app
 if __name__ == "__main__":
