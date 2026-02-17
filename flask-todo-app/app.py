@@ -65,6 +65,7 @@ class Subtask(db.Model):
     title = db.Column(db.String(200), nullable=False)
     is_done = db.Column(db.Boolean, default=False)
     order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
@@ -77,6 +78,7 @@ class Subtask(db.Model):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
         }
 
+# Task model with metadata
 # Task model with metadata and relationships
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -93,6 +95,10 @@ class Task(db.Model):
     tags = db.relationship('Tag', secondary=task_tags, backref=db.backref('tasks', lazy='dynamic'),
                           cascade='save-update, merge')
     comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
+    subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
+                              order_by='Subtask.order')
+    
+    # Relationship to subtasks
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
                               order_by='Subtask.order')
     
@@ -341,6 +347,7 @@ def update(id):
     db.session.commit()
     return redirect("/")
 
+# Subtask routes
 # ============ TAG ROUTES ============
 
 @app.route("/tags", methods=["GET"])
@@ -588,6 +595,7 @@ def reorder_subtask(subtask_id):
     else:
         return redirect(f"/task/{subtask.task_id}")
 
+# Run app
 # ============ APP INITIALIZATION ============
 
 if __name__ == "__main__":
