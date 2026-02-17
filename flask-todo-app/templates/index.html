@@ -82,14 +82,15 @@ body {
     color: #ff4d6d;
 }
 
-.edit-btn {
-    color: #0dcaf0;
-    font-size: 16px;
-    cursor: pointer;
-}
-
 .edit-btn:hover {
     color: #31d3f3;
+}
+
+.edit-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
 }
 
 .task-link {
@@ -240,13 +241,10 @@ body {
 <!-- Add Task Form -->
 <form action="/add" method="POST" class="mb-4" id="addTaskForm">
 <div class="row g-2">
-<div class="col-md-6">
+<div class="col-md-7">
 <input type="text" name="task" class="form-control" placeholder="Task name..." required>
 </div>
-<div class="col-md-2">
-<input type="date" name="due_date" class="form-control">
-</div>
-<div class="col-md-2">
+<div class="col-md-3">
 <select name="priority" class="form-select">
 <option value="Low">Low</option>
 <option value="Medium" selected>Medium</option>
@@ -296,20 +294,7 @@ body {
 </select>
 </form>
 </div>
-<div class="col-md-2">
-<form method="GET" class="d-inline w-100">
-<input type="hidden" name="q" value="{{ search }}">
-<input type="hidden" name="priority" value="{{ priority_filter }}">
-<input type="hidden" name="status" value="{{ status_filter }}">
-<select name="date_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-<option value="">All Dates</option>
-<option value="overdue" {% if date_filter == 'overdue' %}selected{% endif %}>⏰ Overdue</option>
-<option value="today" {% if date_filter == 'today' %}selected{% endif %}>📅 Today</option>
-<option value="this_week" {% if date_filter == 'this_week' %}selected{% endif %}>📆 This Week</option>
-<option value="no_due_date" {% if date_filter == 'no_due_date' %}selected{% endif %}>📌 No Due Date</option>
-</select>
-</form>
-</div>
+
 <div class="col-md-3">
 <form method="GET" class="d-inline w-100">
 <input type="hidden" name="q" value="{{ search }}">
@@ -319,8 +304,6 @@ body {
 <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
 <option value="created_at_desc" {% if sort_by == 'created_at_desc' %}selected{% endif %}>Newest First</option>
 <option value="created_at_asc" {% if sort_by == 'created_at_asc' %}selected{% endif %}>Oldest First</option>
-<option value="due_date_asc" {% if sort_by == 'due_date_asc' %}selected{% endif %}>Due Date (Soon)</option>
-<option value="due_date_desc" {% if sort_by == 'due_date_desc' %}selected{% endif %}>Due Date (Later)</option>
 <option value="priority_high" {% if sort_by == 'priority_high' %}selected{% endif %}>Priority (High→Low)</option>
 <option value="priority_low" {% if sort_by == 'priority_low' %}selected{% endif %}>Priority (Low→High)</option>
 <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name (A→Z)</option>
@@ -353,21 +336,21 @@ body {
 <div class="task-meta">
 <span class="badge badge-priority badge-{{ task.priority.lower() }}">{{ task.priority }}</span>
 <span class="badge bg-secondary">{{ task.status.upper() }}</span>
-{% if task.due_date %}
-<span class="badge {% if task.is_overdue() %}overdue{% else %}bg-info{% endif %}">
-<i class="bi bi-calendar"></i> 
-{% if task.is_overdue() %}OVERDUE{% else %}{{ task.due_date.strftime('%m/%d') }}{% endif %}
-</span>
-{% endif %}
 </div>
 </div>
 
 </div>
 
 <div class="d-flex gap-2">
-<a href="/edit/{{ task.id }}" class="edit-btn" title="Edit task">
+<button type="button" class="btn btn-link edit-btn" title="Edit task" data-bs-toggle="modal" data-bs-target="#editModal" 
+data-task-id="{{ task.id }}"
+data-task-name="{{ task.name|replace('"', '&quot;')|replace("'", '&#39;') }}"
+data-task-description="{{ task.description|replace('"', '&quot;')|replace("'", '&#39;') if task.description else '' }}"
+data-task-priority="{{ task.priority }}"
+data-task-status="{{ task.status }}"
+onclick="editFromButton(this)">
 <i class="bi bi-pencil-square"></i>
-</a>
+</button>
 <a href="/delete/{{ task.id }}" class="delete-btn" title="Delete task" onclick="return confirm('Delete this task?')">
 <i class="bi bi-trash-fill"></i>
 </a>
@@ -445,12 +428,6 @@ body {
 <div class="row">
 <div class="col-md-6">
 <div class="mb-3">
-<label class="form-label text-white">Due Date</label>
-<input type="datetime-local" name="due_date" class="form-control">
-</div>
-</div>
-<div class="col-md-6">
-<div class="mb-3">
 <label class="form-label text-white">Priority</label>
 <select name="priority" class="form-select">
 <option value="Low">Low</option>
@@ -499,12 +476,6 @@ body {
 <div class="row">
 <div class="col-md-6">
 <div class="mb-3">
-<label class="form-label text-white">Due Date</label>
-<input type="datetime-local" id="editDueDateInput" name="due_date" class="form-control">
-</div>
-</div>
-<div class="col-md-6">
-<div class="mb-3">
 <label class="form-label text-white">Priority</label>
 <select id="editPriorityInput" name="priority" class="form-select">
 <option value="Low">Low</option>
@@ -535,12 +506,17 @@ body {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-function setEditTask(taskId, taskName, taskDescription, taskPriority, taskStatus, taskDueDate) {
+function editFromButton(buttonElement) {
+    const taskId = buttonElement.dataset.taskId;
+    const taskName = buttonElement.dataset.taskName;
+    const taskDescription = buttonElement.dataset.taskDescription;
+    const taskPriority = buttonElement.dataset.taskPriority;
+    const taskStatus = buttonElement.dataset.taskStatus;
+    
     document.getElementById('editTaskInput').value = taskName;
     document.getElementById('editDescriptionInput').value = taskDescription || '';
     document.getElementById('editPriorityInput').value = taskPriority || 'Medium';
     document.getElementById('editStatusInput').value = taskStatus || 'todo';
-    document.getElementById('editDueDateInput').value = taskDueDate || '';
     document.getElementById('editForm').action = '/update/' + taskId;
 }
 </script>
