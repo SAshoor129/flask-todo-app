@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from enum import Enum
+import json
 
 app = Flask(__name__)
 
@@ -22,6 +23,22 @@ class StatusEnum(str, Enum):
     DOING = "doing"
     DONE = "done"
 
+# Association table for many-to-many relationship between Task and Tag
+task_tags = db.Table('task_tags',
+    db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
+)
+
+# Tag model
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    color = db.Column(db.String(7), default="#6f42c1")  # hex color code
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'color': self.color}
+
 # Task model with metadata
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,6 +50,10 @@ class Task(db.Model):
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to tags
+    tags = db.relationship('Tag', secondary=task_tags, backref=db.backref('tasks', lazy='dynamic'),
+                          cascade='save-update, merge')
     
     def is_overdue(self):
         if self.due_date and not self.completed:
@@ -126,6 +147,9 @@ def index():
     all_tasks = Task.query.all()
     overdue_count = sum(1 for t in all_tasks if t.is_overdue())
     
+    # Get all tags for tag filtering
+    all_tags = Tag.query.all()
+    
     return render_template("index.html", 
                           tasks=tasks, 
                           search=search,
@@ -136,7 +160,8 @@ def index():
                           page=page,
                           total_pages=total_pages,
                           total_count=total_count,
-                          overdue_count=overdue_count)
+                          overdue_count=overdue_count,
+                          all_tags=all_tags)
 
 # View task details
 @app.route("/task/<int:id>")
@@ -167,6 +192,14 @@ def add():
         status=status,
         due_date=due_date
     )
+    
+    # Handle tags
+    tag_ids = request.form.getlist("tags")
+    for tag_id in tag_ids:
+        tag = Tag.query.get(int(tag_id))
+        if tag:
+            new_task.tags.append(tag)
+    
     db.session.add(new_task)
     db.session.commit()
     return redirect("/")
@@ -229,9 +262,111 @@ def update(id):
         except (ValueError, TypeError):
             pass
     
+    # Handle tags
+    tag_ids = request.form.getlist("tags")
+    task.tags.clear()
+    for tag_id in tag_ids:
+        tag = Tag.query.get(int(tag_id))
+        if tag:
+            task.tags.append(tag)
+    
     task.updated_at = datetime.utcnow()
     db.session.commit()
     return redirect("/")
+
+# Tag management endpoints
+@app.route("/tags", methods=["GET"])
+def get_tags():
+    """Get all tags as JSON"""
+    tags = Tag.query.all()
+    return jsonify([tag.to_dict() for tag in tags])
+
+@app.route("/tag/create", methods=["POST"])
+def create_tag():
+    """Create a new tag"""
+    data = request.get_json() if request.is_json else request.form
+    name = data.get("name", "").strip()
+    color = data.get("color", "#6f42c1")
+    
+    if not name:
+        return jsonify({"error": "Tag name required"}), 400
+    
+    # Check if tag already exists
+    existing = Tag.query.filter_by(name=name).first()
+    if existing:
+        return jsonify(existing.to_dict()), 200
+    
+    tag = Tag(name=name, color=color)
+    db.session.add(tag)
+    db.session.commit()
+    
+    return jsonify(tag.to_dict()), 201
+
+@app.route("/tag/<int:id>/delete", methods=["POST"])
+def delete_tag(id):
+    """Delete a tag"""
+    tag = Tag.query.get_or_404(id)
+    db.session.delete(tag)
+    db.session.commit()
+    return jsonify({"success": True}), 200
+
+@app.route("/task/<int:task_id>/tag/<int:tag_id>/add", methods=["POST"])
+def add_tag_to_task(task_id, tag_id):
+    """Add a tag to a task"""
+    task = Task.query.get_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+    
+    if tag not in task.tags:
+        task.tags.append(tag)
+        db.session.commit()
+    
+    return jsonify({"success": True}), 200
+
+@app.route("/task/<int:task_id>/tag/<int:tag_id>/remove", methods=["POST"])
+def remove_tag_from_task(task_id, tag_id):
+    """Remove a tag from a task"""
+    task = Task.query.get_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+    
+    if tag in task.tags:
+        task.tags.remove(tag)
+        db.session.commit()
+    
+    return jsonify({"success": True}), 200
+
+@app.route("/filter/tags", methods=["GET"])
+def filter_by_tags():
+    """Filter tasks by tags"""
+    tag_ids = request.args.getlist("tag_ids", type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    
+    if not tag_ids:
+        return redirect("/")
+    
+    tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
+    query = Task.query.filter(Task.tags.any(Tag.id.in_(tag_ids))).order_by(Task.created_at.desc())
+    
+    paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+    tasks = paginated.items
+    total_pages = paginated.pages
+    total_count = paginated.total
+    
+    all_tasks = Task.query.all()
+    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    
+    return render_template("index.html",
+                          tasks=tasks,
+                          search="",
+                          priority_filter="",
+                          status_filter="",
+                          date_filter="",
+                          sort_by="created_at_desc",
+                          page=page,
+                          total_pages=total_pages,
+                          total_count=total_count,
+                          overdue_count=overdue_count,
+                          filter_tags=tags)
 
 # Run app
 if __name__ == "__main__":
