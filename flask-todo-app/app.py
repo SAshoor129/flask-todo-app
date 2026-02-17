@@ -23,6 +23,8 @@ class StatusEnum(str, Enum):
     DOING = "doing"
     DONE = "done"
 
+# ============ MODELS ============
+
 # Association table for many-to-many relationship between Task and Tag
 task_tags = db.Table('task_tags',
     db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
@@ -39,7 +41,43 @@ class Tag(db.Model):
     def to_dict(self):
         return {'id': self.id, 'name': self.name, 'color': self.color}
 
-# Task model with metadata
+# Comment model
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    author = db.Column(db.String(100), default="Anonymous")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'body': self.body,
+            'author': self.author,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+# Subtask model
+class Subtask(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    is_done = db.Column(db.Boolean, default=False)
+    order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'title': self.title,
+            'is_done': self.is_done,
+            'order': self.order,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+# Task model with metadata and relationships
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -51,9 +89,12 @@ class Task(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationship to tags
+    # Relationships
     tags = db.relationship('Tag', secondary=task_tags, backref=db.backref('tasks', lazy='dynamic'),
                           cascade='save-update, merge')
+    comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
+    subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
+                              order_by='Subtask.order')
     
     def is_overdue(self):
         if self.due_date and not self.completed:
@@ -65,6 +106,15 @@ class Task(db.Model):
             delta = self.due_date - datetime.utcnow()
             return delta.days
         return None
+    
+    def get_completion_percentage(self):
+        """Calculate task completion based on subtasks"""
+        if not self.subtasks:
+            return 100 if self.completed else 0
+        done_count = sum(1 for st in self.subtasks if st.is_done)
+        return int((done_count / len(self.subtasks)) * 100)
+
+# ============ ROUTES ============
 
 # Home page
 @app.route("/")
@@ -167,7 +217,8 @@ def index():
 @app.route("/task/<int:id>")
 def view_task(id):
     task = Task.query.get_or_404(id)
-    return render_template("task_detail.html", task=task)
+    comments = Comment.query.filter_by(task_id=id).order_by(Comment.created_at.desc()).all()
+    return render_template("task_detail.html", task=task, comments=comments)
 
 # Add task
 @app.route("/add", methods=["POST"])
@@ -274,7 +325,8 @@ def update(id):
     db.session.commit()
     return redirect("/")
 
-# Tag management endpoints
+# ============ TAG ROUTES ============
+
 @app.route("/tags", methods=["GET"])
 def get_tags():
     """Get all tags as JSON"""
@@ -368,7 +420,160 @@ def filter_by_tags():
                           overdue_count=overdue_count,
                           filter_tags=tags)
 
-# Run app
+# ============ COMMENT ROUTES ============
+
+@app.route("/task/<int:task_id>/comment/add", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        body = data.get("body", "").strip()
+        author = data.get("author", "Anonymous").strip()
+    else:
+        body = request.form.get("body", "").strip()
+        author = request.form.get("author", "Anonymous").strip()
+    
+    if not body or len(body) > 1000:
+        return jsonify({"error": "Comment body required (max 1000 chars)"}), 400
+    
+    # Basic sanitization to prevent XSS
+    body = body.replace("<script>", "").replace("</script>", "")
+    
+    comment = Comment(task_id=task_id, body=body, author=author)
+    db.session.add(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(comment.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/comment/<int:comment_id>/delete", methods=["POST"])
+def delete_comment(comment_id):
+    """Delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    task_id = comment.task_id
+    
+    db.session.delete(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/comments", methods=["GET"])
+def get_task_comments(task_id):
+    """Get all comments for a task"""
+    task = Task.query.get_or_404(task_id)
+    comments = Comment.query.filter_by(task_id=task_id).order_by(Comment.created_at.desc()).all()
+    return jsonify([comment.to_dict() for comment in comments])
+
+# ============ SUBTASK ROUTES ============
+
+@app.route("/task/<int:task_id>/subtask/add", methods=["POST"])
+def add_subtask(task_id):
+    """Add a subtask to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        title = data.get("title", "").strip()
+    else:
+        title = request.form.get("title", "").strip()
+    
+    if not title or len(title) > 200:
+        return jsonify({"error": "Subtask title required (max 200 chars)"}), 400
+    
+    # Get max order
+    max_order = db.session.query(db.func.max(Subtask.order)).filter_by(task_id=task_id).scalar() or 0
+    
+    subtask = Subtask(task_id=task_id, title=title, order=max_order + 1)
+    db.session.add(subtask)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/subtask/<int:subtask_id>/toggle", methods=["POST"])
+def toggle_subtask(subtask_id):
+    """Toggle subtask completion status"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    subtask.is_done = not subtask.is_done
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
+
+@app.route("/subtask/<int:subtask_id>/delete", methods=["POST"])
+def delete_subtask(subtask_id):
+    """Delete a subtask"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    task_id = subtask.task_id
+    
+    db.session.delete(subtask)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/subtasks", methods=["GET"])
+def get_subtasks(task_id):
+    """Get all subtasks for a task"""
+    task = Task.query.get_or_404(task_id)
+    subtasks = Subtask.query.filter_by(task_id=task_id).order_by(Subtask.order).all()
+    return jsonify({
+        'subtasks': [st.to_dict() for st in subtasks],
+        'completion_percentage': task.get_completion_percentage()
+    })
+
+@app.route("/subtask/<int:subtask_id>/update", methods=["POST"])
+def update_subtask(subtask_id):
+    """Update a subtask title"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        title = data.get("title", "").strip()
+    else:
+        title = request.form.get("title", "").strip()
+    
+    if title and len(title) <= 200:
+        subtask.title = title
+        db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
+
+@app.route("/subtask/<int:subtask_id>/reorder", methods=["POST"])
+def reorder_subtask(subtask_id):
+    """Reorder subtasks"""
+    subtask = Subtask.query.get_or_404(subtask_id)
+    
+    data = request.get_json() if request.is_json else request.form
+    new_order = data.get("order", type=int)
+    
+    if new_order is not None:
+        subtask.order = new_order
+        db.session.commit()
+    
+    if request.is_json:
+        return jsonify(subtask.to_dict()), 200
+    else:
+        return redirect(f"/task/{subtask.task_id}")
+
+# ============ APP INITIALIZATION ============
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
