@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
 
@@ -36,7 +36,7 @@ class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
     color = db.Column(db.String(7), default="#6f42c1")  # hex color code
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {'id': self.id, 'name': self.name, 'color': self.color}
@@ -47,7 +47,7 @@ class Comment(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     body = db.Column(db.Text, nullable=False)
     author = db.Column(db.String(100), default="Anonymous")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -65,7 +65,7 @@ class Subtask(db.Model):
     title = db.Column(db.String(200), nullable=False)
     is_done = db.Column(db.Boolean, default=False)
     order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -86,8 +86,8 @@ class Task(db.Model):
     status = db.Column(db.String(20), default="todo")
     due_date = db.Column(db.DateTime, nullable=True)
     completed = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     tags = db.relationship('Tag', secondary=task_tags, backref=db.backref('tasks', lazy='dynamic'),
@@ -98,12 +98,12 @@ class Task(db.Model):
     
     def is_overdue(self):
         if self.due_date and not self.completed:
-            return self.due_date < datetime.utcnow()
+            return self.due_date < datetime.now(timezone.utc)
         return False
     
     def days_until_due(self):
         if self.due_date:
-            delta = self.due_date - datetime.utcnow()
+            delta = self.due_date - datetime.now(timezone.utc)
             return delta.days
         return None
     
@@ -148,10 +148,10 @@ def index():
         query = query.filter(Task.status == status_filter)
     
     # Apply date range filter
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     if date_filter == 'overdue':
         query = query.filter(
-            Task.due_date < datetime.utcnow(),
+            Task.due_date < datetime.now(timezone.utc),
             Task.completed == False
         )
     elif date_filter == 'today':
@@ -264,7 +264,7 @@ def complete(id):
         task.status = "done"
     else:
         task.status = "todo"
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     db.session.commit()
     return redirect("/")
 
@@ -278,7 +278,7 @@ def update_status(id, new_status):
             task.completed = True
         else:
             task.completed = False
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
         db.session.commit()
     return redirect("/")
 
@@ -321,7 +321,7 @@ def update(id):
         if tag:
             task.tags.append(tag)
     
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     db.session.commit()
     return redirect("/")
 
