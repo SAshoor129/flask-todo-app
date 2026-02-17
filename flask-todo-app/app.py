@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from enum import Enum
@@ -22,6 +22,23 @@ class StatusEnum(str, Enum):
     DOING = "doing"
     DONE = "done"
 
+# Comment model
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    author = db.Column(db.String(100), default="Anonymous")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'body': self.body,
+            'author': self.author,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
 # Task model with metadata
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,6 +50,9 @@ class Task(db.Model):
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to comments
+    comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     
     def is_overdue(self):
         if self.due_date and not self.completed:
@@ -142,7 +162,8 @@ def index():
 @app.route("/task/<int:id>")
 def view_task(id):
     task = Task.query.get_or_404(id)
-    return render_template("task_detail.html", task=task)
+    comments = Comment.query.filter_by(task_id=id).order_by(Comment.created_at.desc()).all()
+    return render_template("task_detail.html", task=task, comments=comments)
 
 # Add task
 @app.route("/add", methods=["POST"])
@@ -205,6 +226,56 @@ def delete(id):
     db.session.delete(task)
     db.session.commit()
     return redirect("/")
+
+# Comment routes
+@app.route("/task/<int:task_id>/comment/add", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        body = data.get("body", "").strip()
+        author = data.get("author", "Anonymous").strip()
+    else:
+        body = request.form.get("body", "").strip()
+        author = request.form.get("author", "Anonymous").strip()
+    
+    if not body or len(body) > 1000:
+        return jsonify({"error": "Comment body required (max 1000 chars)"}), 400
+    
+    # Basic sanitization to prevent XSS
+    body = body.replace("<script>", "").replace("</script>", "")
+    
+    comment = Comment(task_id=task_id, body=body, author=author)
+    db.session.add(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(comment.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/comment/<int:comment_id>/delete", methods=["POST"])
+def delete_comment(comment_id):
+    """Delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    task_id = comment.task_id
+    
+    db.session.delete(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/comments", methods=["GET"])
+def get_task_comments(task_id):
+    """Get all comments for a task"""
+    task = Task.query.get_or_404(task_id)
+    comments = Comment.query.filter_by(task_id=task_id).order_by(Comment.created_at.desc()).all()
+    return jsonify([comment.to_dict() for comment in comments])
 
 # Edit task page
 @app.route("/edit/<int:id>")
