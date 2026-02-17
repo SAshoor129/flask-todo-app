@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+import json
 
 app = Flask(__name__)
 
@@ -22,6 +23,41 @@ class StatusEnum(str, Enum):
     DOING = "doing"
     DONE = "done"
 
+# ============ MODELS ============
+
+# Association table for many-to-many relationship between Task and Tag
+task_tags = db.Table('task_tags',
+    db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
+)
+
+# Tag model
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    color = db.Column(db.String(7), default="#6f42c1")  # hex color code
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'color': self.color}
+
+# Comment model
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    author = db.Column(db.String(100), default="Anonymous")
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'body': self.body,
+            'author': self.author,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
 # Subtask model
 class Subtask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -30,6 +66,7 @@ class Subtask(db.Model):
     is_done = db.Column(db.Boolean, default=False)
     order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -42,6 +79,7 @@ class Subtask(db.Model):
         }
 
 # Task model with metadata
+# Task model with metadata and relationships
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -50,8 +88,15 @@ class Task(db.Model):
     status = db.Column(db.String(20), default="todo")
     due_date = db.Column(db.DateTime, nullable=True)
     completed = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    tags = db.relationship('Tag', secondary=task_tags, backref=db.backref('tasks', lazy='dynamic'),
+                          cascade='save-update, merge')
+    comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
+    subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
+                              order_by='Subtask.order')
     
     # Relationship to subtasks
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
@@ -59,12 +104,12 @@ class Task(db.Model):
     
     def is_overdue(self):
         if self.due_date and not self.completed:
-            return self.due_date < datetime.utcnow()
+            return self.due_date < datetime.now(timezone.utc)
         return False
     
     def days_until_due(self):
         if self.due_date:
-            delta = self.due_date - datetime.utcnow()
+            delta = self.due_date - datetime.now(timezone.utc)
             return delta.days
         return None
     
@@ -74,6 +119,8 @@ class Task(db.Model):
             return 100 if self.completed else 0
         done_count = sum(1 for st in self.subtasks if st.is_done)
         return int((done_count / len(self.subtasks)) * 100)
+
+# ============ ROUTES ============
 
 # Home page
 @app.route("/")
@@ -107,10 +154,10 @@ def index():
         query = query.filter(Task.status == status_filter)
     
     # Apply date range filter
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     if date_filter == 'overdue':
         query = query.filter(
-            Task.due_date < datetime.utcnow(),
+            Task.due_date < datetime.now(timezone.utc),
             Task.completed == False
         )
     elif date_filter == 'today':
@@ -156,6 +203,9 @@ def index():
     all_tasks = Task.query.all()
     overdue_count = sum(1 for t in all_tasks if t.is_overdue())
     
+    # Get all tags for tag filtering
+    all_tags = Tag.query.all()
+    
     return render_template("index.html", 
                           tasks=tasks, 
                           search=search,
@@ -166,13 +216,15 @@ def index():
                           page=page,
                           total_pages=total_pages,
                           total_count=total_count,
-                          overdue_count=overdue_count)
+                          overdue_count=overdue_count,
+                          all_tags=all_tags)
 
 # View task details
 @app.route("/task/<int:id>")
 def view_task(id):
     task = Task.query.get_or_404(id)
-    return render_template("task_detail.html", task=task)
+    comments = Comment.query.filter_by(task_id=id).order_by(Comment.created_at.desc()).all()
+    return render_template("task_detail.html", task=task, comments=comments)
 
 # Add task
 @app.route("/add", methods=["POST"])
@@ -197,6 +249,14 @@ def add():
         status=status,
         due_date=due_date
     )
+    
+    # Handle tags
+    tag_ids = request.form.getlist("tags")
+    for tag_id in tag_ids:
+        tag = Tag.query.get(int(tag_id))
+        if tag:
+            new_task.tags.append(tag)
+    
     db.session.add(new_task)
     db.session.commit()
     return redirect("/")
@@ -210,7 +270,7 @@ def complete(id):
         task.status = "done"
     else:
         task.status = "todo"
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     db.session.commit()
     return redirect("/")
 
@@ -224,7 +284,7 @@ def update_status(id, new_status):
             task.completed = True
         else:
             task.completed = False
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
         db.session.commit()
     return redirect("/")
 
@@ -241,7 +301,23 @@ def delete(id):
 def edit(id):
     task = Task.query.get_or_404(id)
     tasks = Task.query.order_by(Task.created_at.desc()).all()
-    return render_template("index.html", tasks=tasks, editing_task=task)
+    all_tags = Tag.query.all()
+    all_tasks = Task.query.all()
+    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    
+    return render_template("index.html", 
+                          tasks=tasks, 
+                          editing_task=task,
+                          search="",
+                          priority_filter="",
+                          status_filter="",
+                          date_filter="",
+                          sort_by="created_at_desc",
+                          page=1,
+                          total_pages=1,
+                          total_count=len(tasks),
+                          overdue_count=overdue_count,
+                          all_tags=all_tags)
 
 # Update task
 @app.route("/update/<int:id>", methods=["POST"])
@@ -259,11 +335,167 @@ def update(id):
         except (ValueError, TypeError):
             pass
     
-    task.updated_at = datetime.utcnow()
+    # Handle tags
+    tag_ids = request.form.getlist("tags")
+    task.tags.clear()
+    for tag_id in tag_ids:
+        tag = Tag.query.get(int(tag_id))
+        if tag:
+            task.tags.append(tag)
+    
+    task.updated_at = datetime.now(timezone.utc)
     db.session.commit()
     return redirect("/")
 
 # Subtask routes
+# ============ TAG ROUTES ============
+
+@app.route("/tags", methods=["GET"])
+def get_tags():
+    """Get all tags as JSON"""
+    tags = Tag.query.all()
+    return jsonify([tag.to_dict() for tag in tags])
+
+@app.route("/tag/create", methods=["POST"])
+def create_tag():
+    """Create a new tag"""
+    data = request.get_json() if request.is_json else request.form
+    name = data.get("name", "").strip()
+    color = data.get("color", "#6f42c1")
+    
+    if not name:
+        return jsonify({"error": "Tag name required"}), 400
+    
+    # Check if tag already exists
+    existing = Tag.query.filter_by(name=name).first()
+    if existing:
+        return jsonify(existing.to_dict()), 200
+    
+    tag = Tag(name=name, color=color)
+    db.session.add(tag)
+    db.session.commit()
+    
+    return jsonify(tag.to_dict()), 201
+
+@app.route("/tag/<int:id>/delete", methods=["POST"])
+def delete_tag(id):
+    """Delete a tag"""
+    tag = Tag.query.get_or_404(id)
+    db.session.delete(tag)
+    db.session.commit()
+    return jsonify({"success": True}), 200
+
+@app.route("/task/<int:task_id>/tag/<int:tag_id>/add", methods=["POST"])
+def add_tag_to_task(task_id, tag_id):
+    """Add a tag to a task"""
+    task = Task.query.get_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+    
+    if tag not in task.tags:
+        task.tags.append(tag)
+        db.session.commit()
+    
+    return jsonify({"success": True}), 200
+
+@app.route("/task/<int:task_id>/tag/<int:tag_id>/remove", methods=["POST"])
+def remove_tag_from_task(task_id, tag_id):
+    """Remove a tag from a task"""
+    task = Task.query.get_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+    
+    if tag in task.tags:
+        task.tags.remove(tag)
+        db.session.commit()
+    
+    return jsonify({"success": True}), 200
+
+@app.route("/filter/tags", methods=["GET"])
+def filter_by_tags():
+    """Filter tasks by tags"""
+    tag_ids = request.args.getlist("tag_ids", type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    
+    if not tag_ids:
+        return redirect("/")
+    
+    tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
+    query = Task.query.filter(Task.tags.any(Tag.id.in_(tag_ids))).order_by(Task.created_at.desc())
+    
+    paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+    tasks = paginated.items
+    total_pages = paginated.pages
+    total_count = paginated.total
+    
+    all_tasks = Task.query.all()
+    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    
+    return render_template("index.html",
+                          tasks=tasks,
+                          search="",
+                          priority_filter="",
+                          status_filter="",
+                          date_filter="",
+                          sort_by="created_at_desc",
+                          page=page,
+                          total_pages=total_pages,
+                          total_count=total_count,
+                          overdue_count=overdue_count,
+                          filter_tags=tags)
+
+# ============ COMMENT ROUTES ============
+
+@app.route("/task/<int:task_id>/comment/add", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task"""
+    task = Task.query.get_or_404(task_id)
+    
+    if request.is_json:
+        data = request.get_json()
+        body = data.get("body", "").strip()
+        author = data.get("author", "Anonymous").strip()
+    else:
+        body = request.form.get("body", "").strip()
+        author = request.form.get("author", "Anonymous").strip()
+    
+    if not body or len(body) > 1000:
+        return jsonify({"error": "Comment body required (max 1000 chars)"}), 400
+    
+    # Basic sanitization to prevent XSS
+    body = body.replace("<script>", "").replace("</script>", "")
+    
+    comment = Comment(task_id=task_id, body=body, author=author)
+    db.session.add(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify(comment.to_dict()), 201
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/comment/<int:comment_id>/delete", methods=["POST"])
+def delete_comment(comment_id):
+    """Delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    task_id = comment.task_id
+    
+    db.session.delete(comment)
+    db.session.commit()
+    
+    if request.is_json:
+        return jsonify({"success": True}), 200
+    else:
+        return redirect(f"/task/{task_id}")
+
+@app.route("/task/<int:task_id>/comments", methods=["GET"])
+def get_task_comments(task_id):
+    """Get all comments for a task"""
+    task = Task.query.get_or_404(task_id)
+    comments = Comment.query.filter_by(task_id=task_id).order_by(Comment.created_at.desc()).all()
+    return jsonify([comment.to_dict() for comment in comments])
+
+# ============ SUBTASK ROUTES ============
+
 @app.route("/task/<int:task_id>/subtask/add", methods=["POST"])
 def add_subtask(task_id):
     """Add a subtask to a task"""
@@ -364,6 +596,8 @@ def reorder_subtask(subtask_id):
         return redirect(f"/task/{subtask.task_id}")
 
 # Run app
+# ============ APP INITIALIZATION ============
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
