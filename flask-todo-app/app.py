@@ -295,7 +295,23 @@ def delete(id):
 def edit(id):
     task = Task.query.get_or_404(id)
     tasks = Task.query.order_by(Task.created_at.desc()).all()
-    return render_template("index.html", tasks=tasks, editing_task=task)
+    all_tags = Tag.query.all()
+    all_tasks = Task.query.all()
+    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    
+    return render_template("index.html", 
+                          tasks=tasks, 
+                          editing_task=task,
+                          search="",
+                          priority_filter="",
+                          status_filter="",
+                          date_filter="",
+                          sort_by="created_at_desc",
+                          page=1,
+                          total_pages=1,
+                          total_count=len(tasks),
+                          overdue_count=overdue_count,
+                          all_tags=all_tags)
 
 # Update task
 @app.route("/update/<int:id>", methods=["POST"])
