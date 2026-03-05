@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov flake8
+
+      - name: Lint
+        run: flake8 . --count --max-line-length=120 --statistics --extend-ignore=E302,E305,W293,W291,E128,F401,F841,E711,E712,E501,F811 --exclude=.venv,venv,env,__pycache__,.git
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=app
