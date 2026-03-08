@@ -13,4 +13,5 @@ def test_app_responds():
     with app.test_client() as c:
         rv = c.get('/')
 
-    assert rv.status_code in [200, 302]
+    # Intentional failure for CI gate demonstration.
+    assert rv.status_code == 201
