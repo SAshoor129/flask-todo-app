@@ -206,6 +206,8 @@ def index():
     # Get stats for dashboard
     all_tasks = Task.query.all()
     overdue_count = sum(1 for t in all_tasks if t.is_overdue())
+    one_week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    completed_last_7_days = sum(1 for t in all_tasks if t.completed and t.updated_at and t.updated_at >= one_week_ago)
     
     # Get all tags for tag filtering
     all_tags = Tag.query.all()
@@ -221,6 +223,7 @@ def index():
                           total_pages=total_pages,
                           total_count=total_count,
                           overdue_count=overdue_count,
+                          completed_last_7_days=completed_last_7_days,
                           all_tags=all_tags)
 
 # View task details
@@ -418,18 +421,24 @@ def create_tag():
     color = data.get("color", "#6f42c1")
     
     if not name:
-        return jsonify({"error": "Tag name required"}), 400
+        if request.is_json:
+            return jsonify({"error": "Tag name required"}), 400
+        return redirect("/")
     
     # Check if tag already exists
     existing = Tag.query.filter_by(name=name).first()
     if existing:
-        return jsonify(existing.to_dict()), 200
+        if request.is_json:
+            return jsonify(existing.to_dict()), 200
+        return redirect("/")
     
     tag = Tag(name=name, color=color)
     db.session.add(tag)
     db.session.commit()
     
-    return jsonify(tag.to_dict()), 201
+    if request.is_json:
+        return jsonify(tag.to_dict()), 201
+    return redirect("/")
 
 @app.route("/tag/<int:id>/delete", methods=["POST"])
 def delete_tag(id):

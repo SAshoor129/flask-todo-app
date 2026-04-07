@@ -82,6 +82,10 @@
                             <div>
                                 <h2 class="text-white">{{ task.name }}</h2>
                                 <small class="text-muted">Created: {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                {% if task.updated_at %}
+                                <br>
+                                <small class="text-muted">Updated: {{ task.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                {% endif %}
                             </div>
                             <div>
                                 <span class="badge badge-priority badge-{{ task.priority.lower() }}">
@@ -103,6 +107,18 @@
                                     <p class="text-muted">{{ task.priority }}</p>
                                 </div>
                             </div>
+                            {% if task.tags %}
+                            <div class="row mb-3">
+                                <div class="col-md-12">
+                                    <strong class="text-white">Tags:</strong>
+                                    <p>
+                                        {% for tag in task.tags %}
+                                        <span class="badge" style="background: {{ tag.color }}; color: #000;">{{ tag.name }}</span>
+                                        {% endfor %}
+                                    </p>
+                                </div>
+                            </div>
+                            {% endif %}
                             {% if task.due_date %}
                             <div class="row">
                                 <div class="col-md-12">
