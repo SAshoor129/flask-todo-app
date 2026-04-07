@@ -98,15 +98,6 @@ class Task(db.Model):
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
                               order_by='Subtask.order')
     
-    # Relationship to subtasks
-    subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan',
-                              order_by='Subtask.order')
-    
-    # Relationship to comments
-    comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
-    
-
-    
     def get_completion_percentage(self):
         """Calculate task completion based on subtasks"""
         if not self.subtasks:
