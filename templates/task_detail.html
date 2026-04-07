@@ -82,10 +82,6 @@
                             <div>
                                 <h2 class="text-white">{{ task.name }}</h2>
                                 <small class="text-muted">Created: {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
-                                {% if task.updated_at %}
-                                <br>
-                                <small class="text-muted">Updated: {{ task.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
-                                {% endif %}
                             </div>
                             <div>
                                 <span class="badge badge-priority badge-{{ task.priority.lower() }}">
@@ -115,21 +111,6 @@
                                         {% for tag in task.tags %}
                                         <span class="badge" style="background: {{ tag.color }}; color: #000;">{{ tag.name }}</span>
                                         {% endfor %}
-                                    </p>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {% if task.due_date %}
-                            <div class="row">
-                                <div class="col-md-12">
-                                    <strong class="text-white">Due Date:</strong>
-                                    <p class="text-muted {% if task.is_overdue() %}overdue{% endif %}">
-                                        {{ task.due_date.strftime('%Y-%m-%d %H:%M') }}
-                                        {% if task.is_overdue() %}
-                                            <i class="bi bi-exclamation-triangle-fill"></i> OVERDUE
-                                        {% elif task.days_until_due() is not none and task.days_until_due() <= 3 %}
-                                            <i class="bi bi-clock-fill"></i> Due in {{ task.days_until_due() }} days
-                                        {% endif %}
                                     </p>
                                 </div>
                             </div>

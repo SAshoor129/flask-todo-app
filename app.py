@@ -87,7 +87,6 @@ class Task(db.Model):
     description = db.Column(db.Text, nullable=True)
     priority = db.Column(db.String(20), default="Medium")
     status = db.Column(db.String(20), default="todo")
-    due_date = db.Column(db.DateTime, nullable=True)
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -106,16 +105,7 @@ class Task(db.Model):
     # Relationship to comments
     comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     
-    def is_overdue(self):
-        if self.due_date and not self.completed:
-            return self.due_date < datetime.now(timezone.utc)
-        return False
-    
-    def days_until_due(self):
-        if self.due_date:
-            delta = self.due_date - datetime.now(timezone.utc)
-            return delta.days
-        return None
+
     
     def get_completion_percentage(self):
         """Calculate task completion based on subtasks"""
@@ -157,32 +147,10 @@ def index():
     if status_filter:
         query = query.filter(Task.status == status_filter)
     
-    # Apply date range filter
-    today = datetime.now(timezone.utc).date()
-    if date_filter == 'overdue':
-        query = query.filter(
-            Task.due_date < datetime.now(timezone.utc),
-            Task.completed == False
-        )
-    elif date_filter == 'today':
-        start = datetime.combine(today, datetime.min.time())
-        end = datetime.combine(today, datetime.max.time())
-        query = query.filter(Task.due_date.between(start, end))
-    elif date_filter == 'this_week':
-        start = today
-        end = today + timedelta(days=7)
-        start_dt = datetime.combine(start, datetime.min.time())
-        end_dt = datetime.combine(end, datetime.max.time())
-        query = query.filter(Task.due_date.between(start_dt, end_dt))
-    elif date_filter == 'no_due_date':
-        query = query.filter(Task.due_date == None)
+
     
     # Apply sorting
-    if sort_by == 'due_date_asc':
-        query = query.order_by(Task.due_date.asc().nullslast())
-    elif sort_by == 'due_date_desc':
-        query = query.order_by(Task.due_date.desc().nullslast())
-    elif sort_by == 'priority_high':
+    if sort_by == 'priority_high':
         priority_order = {'High': 1, 'Medium': 2, 'Low': 3}
         query = query.order_by(db.case({p: i for i, p in priority_order.items()}, value=Task.priority))
     elif sort_by == 'priority_low':
@@ -205,7 +173,6 @@ def index():
     
     # Get stats for dashboard
     all_tasks = Task.query.all()
-    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
     one_week_ago = datetime.now(timezone.utc) - timedelta(days=7)
     completed_last_7_days = sum(1 for t in all_tasks if t.completed and t.updated_at and t.updated_at >= one_week_ago)
     
@@ -222,7 +189,6 @@ def index():
                           page=page,
                           total_pages=total_pages,
                           total_count=total_count,
-                          overdue_count=overdue_count,
                           completed_last_7_days=completed_last_7_days,
                           all_tags=all_tags)
 
@@ -240,21 +206,12 @@ def add():
     description = request.form.get("description", "").strip()
     priority = request.form.get("priority", "Medium")
     status = request.form.get("status", "todo")
-    due_date_str = request.form.get("due_date", "").strip()
-    
-    due_date = None
-    if due_date_str:
-        try:
-            due_date = datetime.fromisoformat(due_date_str)
-        except (ValueError, TypeError):
-            due_date = None
     
     new_task = Task(
         name=task_name,
         description=description,
         priority=priority,
-        status=status,
-        due_date=due_date
+        status=status
     )
     
     # Handle tags
@@ -359,8 +316,6 @@ def edit(id):
     task = Task.query.get_or_404(id)
     tasks = Task.query.order_by(Task.created_at.desc()).all()
     all_tags = Tag.query.all()
-    all_tasks = Task.query.all()
-    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
     
     return render_template("index.html", 
                           tasks=tasks, 
@@ -373,7 +328,7 @@ def edit(id):
                           page=1,
                           total_pages=1,
                           total_count=len(tasks),
-                          overdue_count=overdue_count,
+                          completed_last_7_days=0,
                           all_tags=all_tags)
 
 # Update task
@@ -384,13 +339,6 @@ def update(id):
     task.description = request.form.get("description", task.description).strip()
     task.priority = request.form.get("priority", task.priority)
     task.status = request.form.get("status", task.status)
-    
-    due_date_str = request.form.get("due_date", "").strip()
-    if due_date_str:
-        try:
-            task.due_date = datetime.fromisoformat(due_date_str)
-        except (ValueError, TypeError):
-            pass
     
     # Handle tags
     tag_ids = request.form.getlist("tags")
@@ -490,9 +438,6 @@ def filter_by_tags():
     total_pages = paginated.pages
     total_count = paginated.total
     
-    all_tasks = Task.query.all()
-    overdue_count = sum(1 for t in all_tasks if t.is_overdue())
-    
     return render_template("index.html",
                           tasks=tasks,
                           search="",
@@ -503,7 +448,7 @@ def filter_by_tags():
                           page=page,
                           total_pages=total_pages,
                           total_count=total_count,
-                          overdue_count=overdue_count,
+                          completed_last_7_days=0,
                           filter_tags=tags)
 
 # ============ SUBTASK ROUTES ============
