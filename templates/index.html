@@ -115,7 +115,7 @@ body {
 
 .dashboard {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 15px;
     margin-bottom: 25px;
 }
@@ -227,6 +227,10 @@ body {
 <div class="stat-card">
 <div class="stat-number">{{ tasks|selectattr('completed', 'equalto', True)|list|length }}</div>
 <div class="stat-label">Completed</div>
+</div>
+<div class="stat-card">
+<div class="stat-number">{{ completed_last_7_days }}</div>
+<div class="stat-label">Completed (7d)</div>
 </div>
 <div class="stat-card">
 <div class="stat-number">{{ tasks|selectattr('completed', 'equalto', False)|list|length }}</div>
