@@ -418,18 +418,24 @@ def create_tag():
     color = data.get("color", "#6f42c1")
     
     if not name:
-        return jsonify({"error": "Tag name required"}), 400
+        if request.is_json:
+            return jsonify({"error": "Tag name required"}), 400
+        return redirect("/")
     
     # Check if tag already exists
     existing = Tag.query.filter_by(name=name).first()
     if existing:
-        return jsonify(existing.to_dict()), 200
+        if request.is_json:
+            return jsonify(existing.to_dict()), 200
+        return redirect("/")
     
     tag = Tag(name=name, color=color)
     db.session.add(tag)
     db.session.commit()
     
-    return jsonify(tag.to_dict()), 201
+    if request.is_json:
+        return jsonify(tag.to_dict()), 201
+    return redirect("/")
 
 @app.route("/tag/<int:id>/delete", methods=["POST"])
 def delete_tag(id):

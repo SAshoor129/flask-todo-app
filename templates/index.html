@@ -315,6 +315,32 @@ body {
 </form>
 </div>
 </div>
+
+<div class="row mt-3">
+<div class="col-12">
+<label class="form-label text-white mb-2">Filter by Tag</label>
+<div class="d-flex flex-wrap gap-2">
+{% for tag in all_tags %}
+<a href="/filter/tags?tag_ids={{ tag.id }}" class="btn btn-sm btn-outline-light {% if filter_tags and tag in filter_tags %}active{% endif %}">{{ tag.name }}</a>
+{% endfor %}
+</div>
+</div>
+</div>
+<div class="row mt-3">
+<div class="col-12">
+<form id="newTagForm" class="row g-2 align-items-end" onsubmit="createTag(event)">
+<div class="col-auto">
+<label class="form-label text-white mb-1">New Tag</label>
+<input type="text" id="newTagName" class="form-control form-control-sm" placeholder="Tag name" required>
+</div>
+<div class="col-auto">
+<button type="submit" class="btn btn-sm btn-primary">Create Tag</button>
+</div>
+<div class="col-auto">
+<small class="text-muted">Create labels before assigning to tasks.</small>
+</div>
+</form>
+</div>
 </div>
 
 <!-- Task List -->
@@ -343,6 +369,13 @@ body {
 <span class="badge bg-warning text-dark">Due {{ task.due_date.strftime('%Y-%m-%d') }}</span>
 {% endif %}
 </div>
+{% if task.tags %}
+<div class="mt-2">
+{% for tag in task.tags %}
+<span class="badge bg-light text-dark">{{ tag.name }}</span>
+{% endfor %}
+</div>
+{% endif %}
 </div>
 
 </div>
@@ -355,6 +388,7 @@ data-task-description="{{ task.description|replace('"', '&quot;')|replace("'", '
 data-task-priority="{{ task.priority }}"
 data-task-status="{{ task.status }}"
 data-task-due-date="{{ task.due_date.strftime('%Y-%m-%d') if task.due_date else '' }}"
+data-task-tag-ids="{{ task.tags|map(attribute='id')|join(',') }}"
 onclick="editFromButton(this)">
 <i class="bi bi-pencil-square"></i>
 </button>
@@ -451,6 +485,15 @@ onclick="editFromButton(this)">
 </div>
 </div>
 <div class="mb-3">
+<label class="form-label text-white">Tags</label>
+<select name="tags" class="form-select" multiple size="3">
+{% for tag in all_tags %}
+<option value="{{ tag.id }}">{{ tag.name }}</option>
+{% endfor %}
+</select>
+<small class="text-muted">Hold Ctrl/Cmd to select multiple tags.</small>
+</div>
+<div class="mb-3">
 <label class="form-label text-white">Status</label>
 <select name="status" class="form-select">
 <option value="todo" selected>To Do</option>
@@ -505,6 +548,15 @@ onclick="editFromButton(this)">
 </div>
 </div>
 <div class="mb-3">
+<label class="form-label text-white">Tags</label>
+<select id="editTagInput" name="tags" class="form-select" multiple size="3">
+{% for tag in all_tags %}
+<option value="{{ tag.id }}">{{ tag.name }}</option>
+{% endfor %}
+</select>
+<small class="text-muted">Hold Ctrl/Cmd to select multiple tags.</small>
+</div>
+<div class="mb-3">
 <label class="form-label text-white">Status</label>
 <select id="editStatusInput" name="status" class="form-select">
 <option value="todo">To Do</option>
@@ -532,13 +584,39 @@ function editFromButton(buttonElement) {
     const taskPriority = buttonElement.dataset.taskPriority;
     const taskStatus = buttonElement.dataset.taskStatus;
     const taskDueDate = buttonElement.dataset.taskDueDate;
+    const taskTagIds = buttonElement.dataset.taskTagIds || '';
     
     document.getElementById('editTaskInput').value = taskName;
     document.getElementById('editDescriptionInput').value = taskDescription || '';
     document.getElementById('editPriorityInput').value = taskPriority || 'Medium';
     document.getElementById('editStatusInput').value = taskStatus || 'todo';
     document.getElementById('editDueDateInput').value = taskDueDate || '';
+
+    const tagIds = taskTagIds.split(',').filter(Boolean).map(id => id.trim());
+    const tagSelect = document.getElementById('editTagInput');
+    Array.from(tagSelect.options).forEach(option => {
+        option.selected = tagIds.includes(option.value);
+    });
+
     document.getElementById('editForm').action = '/update/' + taskId;
+}
+
+async function createTag(event) {
+    event.preventDefault();
+    const name = document.getElementById('newTagName').value.trim();
+    if (!name) return;
+
+    const response = await fetch('/tag/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    if (response.ok) {
+        window.location.reload();
+    } else {
+        const error = await response.json();
+        alert(error.error || 'Unable to create tag');
+    }
 }
 </script>
 
